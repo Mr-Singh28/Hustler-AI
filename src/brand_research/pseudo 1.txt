@@ -1,0 +1,266 @@
+import os
+import requests
+from bs4 import BeautifulSoup
+from serpapi import GoogleSearch
+from openai import OpenAI
+from dotenv import load_dotenv
+import re
+import random
+from src.email_campaign.email_generator import EmailGenerator
+from src.email_campaign.campaign_manager import CampaignManager
+
+# Load environment variables
+load_dotenv()
+
+# Set up API keys
+HUNTER_API_KEY = os.getenv('HUNTER_API_KEY')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+SERPAPI_API_KEY = os.getenv('SERPAPI_API_KEY')
+
+# Set up OpenAI client
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+def get_similar_brands_fallback(industry):
+    """
+    Fallback method to generate similar brands when OpenAI API is unavailable.
+    """
+    tech_brands = ["Google", "Apple", "Microsoft", "Amazon", "Facebook", "IBM", "Intel", "Cisco", "Oracle", "SAP"]
+    health_brands = ["Johnson & Johnson", "Pfizer", "Roche", "Novartis", "Merck", "GlaxoSmithKline", "Sanofi", "AbbVie", "Amgen", "Gilead Sciences"]
+    education_brands = ["Coursera", "Udacity", "edX", "Khan Academy", "Udemy", "Skillshare", "Brilliant", "Duolingo", "Chegg", "Quizlet"]
+    
+    if "tech" in industry.lower():
+        return random.sample(tech_brands, 5)
+    elif "health" in industry.lower():
+        return random.sample(health_brands, 5)
+    elif "education" in industry.lower():
+        return random.sample(education_brands, 5)
+    else:
+        return random.sample(tech_brands + health_brands + education_brands, 5)
+
+def get_similar_brands(brand_name, num_brands=5):
+    """
+    Use OpenAI to generate similar brands, with a fallback option.
+    """
+    prompt = f"List {num_brands} brands similar to {brand_name} in the same industry. Also, in a new line, state the industry of {brand_name}."
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that provides similar brand names."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=150,
+            n=1,
+            temperature=0.7,
+        )
+        response_text = response.choices[0].message.content.strip()
+        
+        # Split the response into brands and industry
+        parts = response_text.split('\n\n')
+        similar_brands_text = parts[0]
+        industry = parts[1] if len(parts) > 1 else "Unknown"
+        
+        # Parse the brands
+        similar_brands = []
+        for line in similar_brands_text.split('\n'):
+            line = line.strip()
+            if line:
+                brand = line.lstrip('0123456789.- ').strip()
+                similar_brands.append(brand)
+        
+        return similar_brands, industry
+    except Exception as e:
+        print(f"Error generating similar brands: {e}")
+        print("Using fallback method to generate similar brands.")
+        return get_similar_brands_fallback("education"), "Education"  # Assuming Prepladder is in education industry
+
+def get_company_website(brand_name):
+    """
+    Use SerpAPI to find the official website of a company.
+    """
+    params = {
+        "engine": "google",
+        "q": f"{brand_name} official website",
+        "api_key": SERPAPI_API_KEY
+    }
+    search = GoogleSearch(params)
+    results = search.get_dict()
+    
+    for result in results.get('organic_results', []):
+        if 'link' in result:
+            return result['link']
+    return None
+
+def extract_emails_from_website(url):
+    """
+    Scrape a website to find email addresses.
+    """
+    try:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        emails = re.findall(email_pattern, soup.text)
+        return list(set(emails))  # Remove duplicates
+    except Exception as e:
+        print(f"Error scraping {url}: {e}")
+        return []
+
+def find_linkedin_profile(brand_name):
+    """
+    Use SerpAPI to find the LinkedIn company page.
+    """
+    params = {
+        "engine": "google",
+        "q": f"{brand_name} company LinkedIn",
+        "api_key": SERPAPI_API_KEY
+    }
+    search = GoogleSearch(params)
+    results = search.get_dict()
+    
+    for result in results.get('organic_results', []):
+        if 'link' in result and 'linkedin.com/company/' in result['link']:
+            return result['link']
+    return None
+
+def guess_email_pattern(website):
+    """
+    Guess common email patterns for a company.
+    """
+    domain = website.split("//")[-1].split("/")[0]
+    return [
+        f"contact@{domain}",
+        f"info@{domain}",
+        f"support@{domain}",
+        f"hello@{domain}",
+        f"marketing@{domain}"
+    ]
+
+def find_company_emails(brand_name):
+    """
+    Find email addresses for a company using multiple methods.
+    """
+    emails = set()
+    
+    # Method 1: Use Hunter.io (you'll need to implement this function)
+    # hunter_emails = find_company_emails_hunter(brand_name)
+    # emails.update(e['value'] for e in hunter_emails)
+    
+    # Method 2: Scrape company website
+    website = get_company_website(brand_name)
+    if website:
+        scraped_emails = extract_emails_from_website(website)
+        emails.update(scraped_emails)
+    
+    # Method 3: Check LinkedIn
+    linkedin_url = find_linkedin_profile(brand_name)
+    if linkedin_url:
+        linkedin_emails = extract_emails_from_website(linkedin_url)
+        emails.update(linkedin_emails)
+    
+    # Method 4: Guess common patterns
+    if website:
+        guessed_emails = guess_email_pattern(website)
+        emails.update(guessed_emails)
+    
+    return list(emails)
+
+def categorize_emails(emails):
+    """
+    Categorize emails based on common patterns for executive positions.
+    """
+    categorized = {
+        'ceo': None,
+        'cfo': None,
+        'cmo': None,
+        'other': []
+    }
+    for email in emails:
+        lower_email = email.lower()
+        if 'ceo' in lower_email or 'chief.executive' in lower_email:
+            categorized['ceo'] = email
+        elif 'cfo' in lower_email or 'chief.financial' in lower_email:
+            categorized['cfo'] = email
+        elif 'cmo' in lower_email or 'chief.marketing' in lower_email or 'marketing' in lower_email:
+            categorized['cmo'] = email
+        else:
+            categorized['other'].append(email)
+    return categorized
+
+def research_brand(brand_name):
+    """
+    Main function to research a brand, find similar brands, and their email addresses.
+    """
+    results = {}
+    
+    # Find similar brands
+    similar_brands, industry = get_similar_brands(brand_name)
+    results[brand_name] = {'similar_brands': similar_brands, 'industry': industry}
+    
+    # Research each similar brand
+    for brand in similar_brands:
+        emails = find_company_emails(brand)
+        categorized_emails = categorize_emails(emails)
+        results[brand] = {
+            'emails': categorized_emails
+        }
+    
+    return results
+
+if __name__ == "__main__":
+    brand_to_research = input("Enter a brand name to research: ")
+    results = research_brand(brand_to_research)
+    
+    print(f"\nResults for {brand_to_research}:")
+    print(f"Industry: {results[brand_to_research]['industry']}")
+    print("Similar brands:")
+    
+    # Initialize EmailGenerator and CampaignManager
+    email_generator = EmailGenerator()
+    campaign_manager = CampaignManager('smtp.gmail.com', 587, 'your_email@gmail.com', 'your_password')
+    
+    # Create a campaign
+    campaign_name = f"{brand_to_research} Outreach"
+    campaign_manager.create_campaign(campaign_name, [])
+    
+    for brand in results[brand_to_research]['similar_brands']:
+        print(f"- {brand}")
+        if brand in results:
+            emails = results[brand]['emails']
+            if any(emails.values()):
+                print("  Emails found:")
+                for category, email in emails.items():
+                    if category != 'other' and email:
+                        print(f"    {category.upper()}: {email}")
+                        
+                        # Generate email using OpenAI
+                        sender_info = {
+                            'name': 'Your Name',
+                            'brand': brand_to_research,
+                            'position': 'Marketing Director',
+                            'expertise': 'Your Expertise'
+                        }
+                        recipient_info = {
+                            'brand': brand,
+                            'industry': results[brand_to_research]['industry']
+                        }
+                        email_content = email_generator.generate_email(sender_info, recipient_info)
+                        
+                        if email_content:
+                            print("\nGenerated Email:")
+                            print(email_content)
+                            
+                            # Uncomment the following line to actually send emails (be careful!)
+                            # campaign_manager.send_email(campaign_name, email, "Collaboration Opportunity", email_content)
+                        
+                if emails['other']:
+                    print(f"    Other emails: {len(emails['other'])}")
+            else:
+                print("  No emails found")
+        else:
+            print("  No emails found")
+        print()
+    
+    # Print campaign stats
+    print("\nCampaign Stats:")
+    print(campaign_manager.get_campaign_stats(campaign_name))

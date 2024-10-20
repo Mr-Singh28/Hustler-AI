@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hustler AI - Enhanced Research Results</title>
+</head>
+<body>
+    <h1>Results for {{ brand_name }}</h1>
+    <h2>Industry: {{ results[brand_name]['industry'] }}</h2>
+    <h3>Similar brands:</h3>
+    <ul>
+    {% for brand in results[brand_name]['similar_brands'] %}
+        <li>
+            <h4>{{ brand }}</h4>
+            <p>Domain: {{ results[brand]['domain'] }}</p>
+            {% if results[brand]['emails'] %}
+                <h5>Emails found:</h5>
+                <ul>
+                {% for category, email in results[brand]['emails'].items() %}
+                    {% if category != 'other' and email %}
+                        <li>{{ category.upper() }}: {{ email }}</li>
+                    {% endif %}
+                {% endfor %}
+                </ul>
+                {% if results[brand]['emails']['other'] %}
+                    <p>Other emails: {{ results[brand]['emails']['other']|length }}</p>
+                {% endif %}
+            {% else %}
+                <p>No emails found</p>
+            {% endif %}
+            <h5>Tailored Email:</h5>
+            <pre>{{ results[brand]['tailored_email'] }}</pre>
+            <form action="{{ url_for('send_email') }}" method="post">
+                <input type="hidden" name="campaign_name" value="{{ brand_name }} Outreach">
+                <input type="hidden" name="recipient" value="{{ results[brand]['emails'].get('ceo', results[brand]['emails'].get('other', [''])[0]) }}">
+                <input type="hidden" name="subject" value="Collaboration Opportunity">
+                <textarea name="body" rows="10" cols="50">{{ results[brand]['tailored_email'] }}</textarea>
+                <button type="submit">Send Email</button>
+            </form>
+        </li>
+    {% endfor %}
+    </ul>
+    <a href="{{ url_for('index') }}">Back to Home</a>
+</body>
+</html>

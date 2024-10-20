@@ -1,0 +1,77 @@
+# src/email_campaign/email_generator.py
+
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Set up OpenAI client
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
+class EmailGenerator:
+    def __init__(self):
+        self.client = client
+
+    def generate_email(self, sender_info, recipient_info):
+        prompt = f"""
+        Create a professional and personalized outreach email with the following details:
+
+        Sender:
+        - Name: {sender_info['name']}
+        - Brand: {sender_info['brand']}
+        - Position: {sender_info['position']}
+        - Expertise: {sender_info['expertise']}
+
+        Recipient:
+        - Brand: {recipient_info['brand']}
+        - Industry: {recipient_info['industry']}
+
+        The email should:
+        1. Have a compelling subject line
+        2. Introduce the sender and their brand
+        3. Mention something specific and positive about the recipient's brand (you can be creative here)
+        4. Suggest a potential collaboration or partnership
+        5. Request a call or meeting to discuss further
+        6. Be concise, friendly, and professional
+
+        Format the response as:
+        Subject: [Your subject line]
+
+        [Body of the email]
+
+        [Signature]
+        """
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a professional email writer, crafting personalized outreach emails for business collaborations."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=500,
+                n=1,
+                temperature=0.7,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"Error generating email: {e}")
+            return None
+
+# Usage example
+if __name__ == "__main__":
+    generator = EmailGenerator()
+    sender_info = {
+        'name': 'John Doe',
+        'brand': 'Hustler AI',
+        'position': 'Marketing Director',
+        'expertise': 'AI-driven marketing solutions'
+    }
+    recipient_info = {
+        'brand': 'TechCorp',
+        'industry': 'technology'
+    }
+    email_content = generator.generate_email(sender_info, recipient_info)
+    print(email_content)
