@@ -1,7 +1,6 @@
 # src/web/app.py
 
 from flask import Flask, render_template, request, redirect, url_for, flash
-from flask_mail import Mail, Message
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
