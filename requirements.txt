@@ -73,3 +73,4 @@ tensorboard-data-server==0.7.2
 tensorflow==2.17.0
 gunicorn
 openai
+Flask-Limiter==3.5.0
