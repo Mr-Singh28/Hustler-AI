@@ -12,6 +12,7 @@ from ..brand_research.brand_research import research_brand
 
 # Load environment variables
 load_dotenv()
+port = int(os.environ.get('PORT', 5000))
 
 # Get the absolute path of the current file (app.py)
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -87,4 +88,4 @@ def internal_error(error):
 
 if __name__ == '__main__':
     create_tables()
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=port, debug=True)
